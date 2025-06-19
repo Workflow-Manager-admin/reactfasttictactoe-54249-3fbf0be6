@@ -36,8 +36,33 @@ class GameStateResponse(BaseModel):
     status: str = Field(..., description="Game status: in_progress, draw, X_wins, O_wins")
     winner: Optional[str] = Field(None, description="Winner: X or O if game is won, None otherwise")
 
-# In-memory "session" store for demo (for production, use a persistent store)
-games: Dict[str, Dict] = {}
+# SQLite3 for persistent session/game store
+import os
+import sqlite3
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "games.db")
+
+def get_conn():
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def ensure_db():
+    conn = get_conn()
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS games (
+            game_id TEXT PRIMARY KEY,
+            board TEXT NOT NULL,
+            current_player TEXT,
+            status TEXT NOT NULL,
+            winner TEXT
+        )
+        """
+    )
+    conn.close()
+
+ensure_db()
 
 app = FastAPI(
     title="Tic Tac Toe Backend API",
