@@ -198,22 +198,24 @@ function App() {
               padding: "24px",
             }}
           >
-            {board.map((row, rIdx) =>
-              row.map((val, cIdx) => (
-                <Cell
-                  key={`${rIdx}-${cIdx}`}
-                  value={val || ""}
-                  onClick={() =>
-                    !val &&
-                    status === "in_progress" &&
-                    !isLoading &&
-                    handleCellClick(rIdx, cIdx)
-                  }
-                  disabled={
-                    !!val || status !== "in_progress" || isLoading
-                  }
-                />
-              ))
+            {(Array.isArray(board) ? board : []).map((row, rIdx) =>
+              Array.isArray(row)
+                ? row.map((val, cIdx) => (
+                    <Cell
+                      key={`${rIdx}-${cIdx}`}
+                      value={val || ""}
+                      onClick={() =>
+                        !val &&
+                        status === "in_progress" &&
+                        !isLoading &&
+                        handleCellClick(rIdx, cIdx)
+                      }
+                      disabled={
+                        !!val || status !== "in_progress" || isLoading
+                      }
+                    />
+                  ))
+                : null
             )}
           </div>
           {error && (
