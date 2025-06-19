@@ -4,20 +4,9 @@ import "./App.css";
 /*
   PUBLIC_INTERFACE
   BACKEND_BASE_URL is the base URL for the backend API.
-  For frontend web applications, use import.meta.env for Vite or process.env.REACT_APP_* for Create React App,
-  but reference 'process' directly in browser code causes runtime ReferenceError unless build tooling replaces it.
-  Here, to avoid issues, use a globally available variable if set (REACT_APP_BACKEND_URL) or fallback to localhost.
-  Replace process.env usage with frontend-safe access. If you use Create React App, process.env.REACT_APP_... is replaced at build time,
-  so you may reference it directly in code, e.g., process.env.REACT_APP_BACKEND_URL, but never access 'process' itself.
-  For maximal compatibility, check typeof for safety (avoiding 'process is not defined'), or use static value.
-  For Vite, use import.meta.env.VITE_BACKEND_URL, but our template appears to use Create React App conventions.
+  All frontend-backend API calls will use this explicit, single backend URL.
 */
-const BACKEND_BASE_URL =
-  (typeof process !== "undefined" &&
-    process.env &&
-    process.env.REACT_APP_BACKEND_URL) ||
-  window.REACT_APP_BACKEND_URL ||
-  "http://localhost:8000";
+const BACKEND_BASE_URL = "https://vscode-internal-2274-dev.dev01.cloud.kavia.ai:3001";
 
 // Colors (from requirements)
 const COLOR_PRIMARY = "#2196f3";
