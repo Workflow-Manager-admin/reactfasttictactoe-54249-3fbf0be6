@@ -2,8 +2,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import Body
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, List, Literal
+from typing import Optional, List
 from uuid import uuid4
+from sqlalchemy import create_engine, Column, String, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import json
+import os
 
 # PUBLIC_INTERFACE
 class StartGameResponse(BaseModel):
@@ -36,34 +41,28 @@ class GameStateResponse(BaseModel):
     status: str = Field(..., description="Game status: in_progress, draw, X_wins, O_wins")
     winner: Optional[str] = Field(None, description="Winner: X or O if game is won, None otherwise")
 
-# SQLite3 for persistent session/game store
-import os
-import sqlite3
-
+####################################################
+# SQLAlchemy ORM Setup
+####################################################
+Base = declarative_base()
 DB_PATH = os.path.join(os.path.dirname(__file__), "games.db")
+DB_URL = f"sqlite:///{DB_PATH}"
+engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+class GameORM(Base):
+    __tablename__ = 'games'
+    game_id = Column(String, primary_key=True, index=True)
+    board = Column(Text, nullable=False)  # store as JSON string
+    current_player = Column(String, nullable=True)
+    status = Column(String, nullable=False)
+    winner = Column(String, nullable=True)
 
-def ensure_db():
-    conn = get_conn()
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS games (
-            game_id TEXT PRIMARY KEY,
-            board TEXT NOT NULL,
-            current_player TEXT,
-            status TEXT NOT NULL,
-            winner TEXT
-        )
-        """
-    )
-    conn.close()
+Base.metadata.create_all(bind=engine)
 
-ensure_db()
-
+####################################################
+# FastAPI Setup
+####################################################
 app = FastAPI(
     title="Tic Tac Toe Backend API",
     description="API backend for Tic Tac Toe game with sessions.",
@@ -81,11 +80,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+####################################################
 # Helpers
+####################################################
 def create_new_board() -> List[List[Optional[str]]]:
     return [[None, None, None] for _ in range(3)]
-
 
 def check_winner(board: List[List[Optional[str]]]) -> Optional[str]:
     # Rows, columns, diagonals
@@ -100,9 +99,22 @@ def check_winner(board: List[List[Optional[str]]]) -> Optional[str]:
             return line[0]  # X or O
     return None
 
-
 def is_board_full(board: List[List[Optional[str]]]) -> bool:
     return all(all(cell for cell in row) for row in board)
+
+def orm_to_state(game: GameORM) -> dict:
+    # Convert SQLAlchemy GameORM row + board from JSON-string
+    board = json.loads(game.board)
+    return {
+        "board": board,
+        "current_player": game.current_player,
+        "status": game.status,
+        "winner": game.winner
+    }
+
+def save_board(session, instance: GameORM, board: List[List[Optional[str]]]):
+    instance.board = json.dumps(board)
+    session.commit()
 
 @app.get("/", tags=["Health"])
 def health_check():
@@ -115,12 +127,17 @@ def start_game():
     """Start a new game – creates a game session and returns board and initial info."""
     game_id = str(uuid4())
     board = create_new_board()
-    games[game_id] = {
-        "board": board,
-        "current_player": "X",
-        "status": "in_progress",
-        "winner": None
-    }
+    game = GameORM(
+        game_id=game_id,
+        board=json.dumps(board),
+        current_player="X",
+        status="in_progress",
+        winner=None
+    )
+    session = SessionLocal()
+    session.add(game)
+    session.commit()
+    session.close()
     return StartGameResponse(
         game_id=game_id,
         board=board,
@@ -132,55 +149,67 @@ def start_game():
 @app.post("/move", response_model=MoveResponse, tags=["Game"], summary="Make a move", description="Submit a move (X or O) for a given session/game ID and board position.")
 def make_move(move: MoveRequest = Body(...)):
     """Submit a move (by session/game ID and board position)."""
-    game_id = move.game_id
-    row, col = move.row, move.col
-
-    if game_id not in games:
+    session = SessionLocal()
+    game = session.query(GameORM).filter(GameORM.game_id == move.game_id).first()
+    if not game:
+        session.close()
         raise HTTPException(status_code=404, detail="Game not found.")
-    game = games[game_id]
 
-    if game["status"] != "in_progress":
+    if game.status != "in_progress":
+        session.close()
         raise HTTPException(status_code=400, detail="Game already finished.")
 
-    board = game["board"]
+    board = json.loads(game.board)
+    row, col = move.row, move.col
     if not (0 <= row <= 2 and 0 <= col <= 2):
+        session.close()
         raise HTTPException(status_code=400, detail="Row and col must be in 0, 1, 2.")
 
     if board[row][col] is not None:
+        session.close()
         raise HTTPException(status_code=400, detail="Cell already taken.")
 
-    board[row][col] = game["current_player"]
+    board[row][col] = game.current_player
 
     winner = check_winner(board)
     if winner:
-        game["status"] = f"{winner}_wins"
-        game["winner"] = winner
-        game["current_player"] = None
+        game.status = f"{winner}_wins"
+        game.winner = winner
+        game.current_player = None
     elif is_board_full(board):
-        game["status"] = "draw"
-        game["winner"] = None
-        game["current_player"] = None
+        game.status = "draw"
+        game.winner = None
+        game.current_player = None
     else:
-        game["current_player"] = "O" if game["current_player"] == "X" else "X"
+        game.current_player = "O" if game.current_player == "X" else "X"
 
-    return MoveResponse(
+    game.board = json.dumps(board)
+    session.commit()
+
+    resp = MoveResponse(
         board=board,
-        current_player=game["current_player"],
-        status=game["status"],
-        winner=game["winner"]
+        current_player=game.current_player,
+        status=game.status,
+        winner=game.winner
     )
+    session.close()
+    return resp
 
 # PUBLIC_INTERFACE
 @app.get("/state/{game_id}", response_model=GameStateResponse, tags=["Game"], summary="Get current game state", description="Retrieve the current state of the game board and status for a session/game ID.")
 def get_game_state(game_id: str):
     """Get the state of a given game session/ID."""
-    if game_id not in games:
+    session = SessionLocal()
+    game = session.query(GameORM).filter(GameORM.game_id == game_id).first()
+    if not game:
+        session.close()
         raise HTTPException(status_code=404, detail="Game not found.")
-
-    game = games[game_id]
-    return GameStateResponse(
-        board=game["board"],
-        current_player=game["current_player"],
-        status=game["status"],
-        winner=game["winner"]
+    board = json.loads(game.board)
+    resp = GameStateResponse(
+        board=board,
+        current_player=game.current_player,
+        status=game.status,
+        winner=game.winner
     )
+    session.close()
+    return resp
