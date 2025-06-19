@@ -6,12 +6,16 @@
   --cell-bg: #fafbfc;
   --cell-border: #e0e0e0;
   --text-color: #222;
+  --base-dark: #1A1A1A;
+  --base-light: #2196f3;
+  --border-color: rgba(255, 255, 255, 0.1);
+  --text-secondary: rgba(34, 34, 34, 0.7);
 }
 
 body {
   margin: 0;
   font-family: 'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-  background-color: var(--base-dark);
+  background-color: var(--background);
   color: var(--text-color);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -24,7 +28,7 @@ body {
 }
 
 .navbar {
-  background-color: var(--base-dark);
+  background-color: var(--primary);
   padding: 16px;
   display: flex;
   align-items: center;
@@ -46,7 +50,7 @@ body {
 }
 
 .logo-symbol {
-  color: var(--base-light);
+  color: var(--accent);
 }
 
 .container {
@@ -68,7 +72,7 @@ body {
 }
 
 .subtitle {
-  color: var(--base-light);
+  color: var(--text-secondary);
   font-weight: 500;
   font-size: 1.1rem;
 }
